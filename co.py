@@ -87,6 +87,26 @@ async def leave(ctx):
 async def stop(ctx):
     ctx.voice_client.stop()
 
+async def get_volume(fname):
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-hide_banner", "-i", fname,
+        "-af", "loudnorm=print_format=json",
+        "-f", "null", "-",
+        stderr = asyncio.subprocess.PIPE
+    )
+    _, stderr = await process.communicate()
+    # Lol ffmpeg doesn't meaningfully split output JSON from other junk.
+    return json.loads("{" + stderr.decode().strip().split("{")[-1])
+
+def filter_settings(loudness):
+    return
+    "loudnorm=i=-15:tp=0:" +
+    f"measured_i={loudness['input_i']}:" +
+    f"measured_tp={loudness['input_tp']}:" +
+    f"measured_lra={loudness['input_lra']}:" +
+    f"measured_thresh={loudness['input_thresh']}:" +
+    "dual_mono=true:linear=true"
+
 async def play_sound(ctx, name):
     try:
         fname = '.'.join([os.path.join(audiodir, name), 'ogg'])
@@ -94,9 +114,12 @@ async def play_sound(ctx, name):
             await ctx.author.send(f"I don't know anything about ```{name}```")
             return
 
+        loudness = await get_volume(fname)
+        audio_filter = filter_settings(loudness)
+
         source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
             source=fname,
-            options="-af loudnorm=i=-15"
+            options="-af " + audio_filter
         ))
         try:
             ctx.voice_client.play(source, after=lambda e: print('Player error: %s' % e) if e else None)
