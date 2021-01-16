@@ -4,6 +4,7 @@ import os.path
 import glob
 from discord.ext import commands as dcmd
 import json
+import asyncio
 
 import inspect
 
