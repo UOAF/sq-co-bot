@@ -13,6 +13,7 @@ def get_mod_path():
     dirname, fname = os.path.split(filepath)
     return dirname
 
+
 client = discord.Client()
 
 audiodir = os.path.join(get_mod_path(), 'sounds')
@@ -31,11 +32,13 @@ if not discord.opus.is_loaded():
         print("Unable to find default location of libopus-0.so... trying opus.dll")
         discord.opus.load_opus('opus')
 
+
 @bot.command(description='Send friendly salutations to this bot.')
 async def hello(ctx):
     author = ctx.author
     msg = 'Hello {}'.format(author.mention)
     await ctx.send(msg)
+
 
 @bot.command(description='Solicit some wisdom from the CO.')
 async def play(ctx, sound_name=''):
@@ -47,6 +50,7 @@ async def play(ctx, sound_name=''):
         await ctx.author.send(msg)
     else:
         await play_sound(ctx, sound_name)
+
 
 async def join_channel(ctx, channel, errmsg=None):
     if ctx.voice_client is not None:
@@ -62,11 +66,13 @@ async def join_channel(ctx, channel, errmsg=None):
             if errmsg is not None:
                 await ctx.author.send(errmsg)
 
+
 @bot.command(description="Join the given voice channel.")
 async def join(ctx, *, channel: discord.VoiceChannel):
     """Joins a voice channel"""
     errmsg = "Can't find channel by the name of {}".format(channel)
     await join_channel(ctx, channel, errmsg)
+
 
 @bot.command(description="Join the user's voice channel.")
 async def summon(ctx):
@@ -76,6 +82,7 @@ async def summon(ctx):
     else:
         await ctx.message.send("You are not connected to a voice channel")
 
+
 @bot.command(description="Leave any connected voice channel.")
 async def leave(ctx):
     try:
@@ -83,16 +90,18 @@ async def leave(ctx):
     except AttributeError:
         await ctx.author.send("I'm not in any voice channel on this server!")
 
+
 @bot.command(description="Stops any audio being played.")
 async def stop(ctx):
     ctx.voice_client.stop()
+
 
 async def get_volume(fname):
     process = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-i", fname,
         "-af", "loudnorm=print_format=json",
         "-f", "null", "-",
-        stderr = asyncio.subprocess.PIPE
+        stderr=asyncio.subprocess.PIPE
     )
     _, stderr = await process.communicate()
     # Lol ffmpeg doesn't meaningfully split output JSON from other junk.
@@ -103,14 +112,19 @@ async def get_volume(fname):
 # Shoot for a (totally arbitrary; change me)
 # -15 "integrated loudness target" and 0dB true peak
 # https://ffmpeg.org/ffmpeg-filters.html#loudnorm
+
+
 def filter_settings(loudness):
-    return
-    "loudnorm=i=-15:tp=0:" +
-    f"measured_i={loudness['input_i']}:" +
-    f"measured_tp={loudness['input_tp']}:" +
-    f"measured_lra={loudness['input_lra']}:" +
-    f"measured_thresh={loudness['input_thresh']}:" +
-    "dual_mono=true:linear=true"
+    crazy_ffmpeg_filter_lines = [
+        "loudnorm=i=-15:tp=0:",
+        f"measured_i={loudness['input_i']}:",
+        f"measured_tp={loudness['input_tp']}:",
+        f"measured_lra={loudness['input_lra']}:",
+        f"measured_thresh={loudness['input_thresh']}:",
+        "dual_mono=true:linear=true"
+    ]
+    return "".join(crazy_ffmpeg_filter_lines)
+
 
 async def play_sound(ctx, name):
     try:
@@ -127,13 +141,17 @@ async def play_sound(ctx, name):
             options="-af " + audio_filter
         ))
         try:
-            ctx.voice_client.play(source, after=lambda e: print('Player error: %s' % e) if e else None)
+            ctx.voice_client.play(
+                source, after=lambda e: print(
+                    'Player error: %s' %
+                    e) if e else None)
         except AttributeError:
             await ctx.author.send('I need to be in a voice channel to do that!')
 
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}: {}\n```'
         await ctx.send(fmt.format(type(e).__name__, e))
+
 
 @bot.event
 async def on_ready():
