@@ -38,6 +38,6 @@ jobs:
         key: ${{ secrets.COBOTSSH }}
         name: id_rsa
         known_hosts: ${{ secrets.KNOWN_HOSTS }}
-    - name: rsync over ssh
+    - name: deploy to AWS
       run: |
           ssh -tt -o StrictHostKeyChecking=no ${{ secrets.USERNAME }}@${{ secrets.KNOWN_HOSTS }} "/opt/sq-co-bot/deploy.sh"
