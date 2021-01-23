@@ -7,6 +7,7 @@ import json
 import asyncio
 import re
 
+
 def get_mod_path():
     filepath = os.path.abspath(__file__)
     dirname, fname = os.path.split(filepath)
@@ -124,6 +125,7 @@ def filter_settings(loudness):
     ]
     return "".join(crazy_ffmpeg_filter_lines)
 
+
 # Do some fuzzy search (case-insensitive, alphanumerics only)
 def find_sound(name):
     # Get a alpha only, lowercase version of every sound name
@@ -135,7 +137,6 @@ def find_sound(name):
     fuzzmap = dict((fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
 
     fuzzmap[fuzzy_token(name)]
-
 
 
 async def play_sound(ctx, name):
