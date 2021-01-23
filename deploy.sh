@@ -1,9 +1,12 @@
 #!/bin/bash
 
+echo "::::::::::: stopping sqcobot.service"
 systemctl --user stop sqcobot.service
-echo "Going go sq-co-bot dir"
+echo "::::::::::: cd to sq-co-bot dir"
 cd /opt/sq-co-bot/
-echo "Git pull in working dir"
-git pull
-echo "Trying to start sqcobot service"
+echo "::::::::::: Git fetch in working dir"
+git fetch
+echo "::::::::::: Git reset in working dir"
+git reset --hard origin/master
+echo "::::::::::: starting sqcobot.service"
 systemctl --user start sqcobot.service
