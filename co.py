@@ -5,9 +5,7 @@ import glob
 from discord.ext import commands as dcmd
 import json
 import asyncio
-
-import inspect
-
+import re
 
 def get_mod_path():
     filepath = os.path.abspath(__file__)
@@ -126,13 +124,23 @@ def filter_settings(loudness):
     ]
     return "".join(crazy_ffmpeg_filter_lines)
 
+# Do some fuzzy search (case-insensitive, alphanumerics only)
+def find_sound(name):
+    # Get a alpha only, lowercase version of every sound name
+    # and map it to the actual name
+    def fuzzy_token(raw):
+        re.sub(r'[\W_]+', '', raw).lower()
+
+    # Could totally cache this instead of rebuilding it each time...
+    fuzzmap = dict((fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
+
+    fuzzmap[fuzzy_token(name)]
+
+
 
 async def play_sound(ctx, name):
     try:
-        fname = '.'.join([os.path.join(audiodir, name), 'ogg'])
-        if not os.path.exists(fname):
-            await ctx.author.send(f"I don't know anything about ```{name}```")
-            return
+        fname = find_sound(name)
 
         loudness = await get_volume(fname)
         audio_filter = filter_settings(loudness)
@@ -148,6 +156,9 @@ async def play_sound(ctx, name):
                     e) if e else None)
         except AttributeError:
             await ctx.author.send('I need to be in a voice channel to do that!')
+
+    except KeyError:
+        await ctx.author.send(f"I don't know anything about ```{name}```")
 
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}: {}\n```'
