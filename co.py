@@ -174,8 +174,8 @@ async def on_ready():
     sounds = [os.path.split(fname)[1][:-4] for fname in file_list]
     sounds = sorted(sounds)
     print('Logged in as')
-    print(bot.user.name)
-    print(bot.user.id)
+    print(f'{bot.user.name=}')
+    print(f'{bot.user.id}')
     print('------')
 
 
