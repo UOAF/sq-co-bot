@@ -134,9 +134,10 @@ def find_sound(name):
         re.sub(r'[\W_]+', '', raw).lower()
 
     # Could totally cache this instead of rebuilding it each time...
-    fuzzmap = dict((fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
+    fuzzmap = dict(
+        (fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
 
-    fuzzmap[fuzzy_token(name)]
+    return fuzzmap[fuzzy_token(name)]
 
 
 async def play_sound(ctx, name):
