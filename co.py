@@ -9,6 +9,7 @@ import re
 import traceback
 import sys
 import logging
+from fuzzywuzzy import fuzz
 
 log = logging.getLogger('sqcobot')
 log.setLevel(logging.INFO)
@@ -144,26 +145,103 @@ def filter_settings(loudness):
     return "".join(crazy_ffmpeg_filter_lines)
 
 
+def sound_name_to_filename(name):
+    return f"{os.path.join(audiodir, name)}.ogg"
+
 # Do some fuzzy search (case-insensitive, alphanumerics only)
+
+
 def find_sound(name):
+
     # Get a alpha only, lowercase version of every sound name
     # and map it to the actual name
+
     def fuzzy_token(raw):
         return re.sub(r'[\W_]+', '', raw).lower()
 
     # Could totally cache this instead of rebuilding it each time...
     fuzzmap = dict(
-        (fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
+        (fuzzy_token(s), sound_name_to_filename(s)) for s in sounds)
 
     log.debug('Searching for sound with name {name}.')
     log.debug(f'{fuzzmap=}')
     return fuzzmap[fuzzy_token(name)]
 
 
+def get_fuzzy_match_scores(name):
+    return {s: fuzz.ratio(name, s) for s in sounds}
+
+
+async def perform_fuzzy_search(ctx, name):
+    MIN_SCORE_THRESHOLD = 50
+    HIGH_SCORE_THRESHOLD = 70
+    scores = get_fuzzy_match_scores(name)
+    log.debug(f'fuzzy search results for {name}: {scores}')
+
+    def limit_to(scores, level):
+        return {name: score for name, score in scores.items() if score > level}
+
+    scores = limit_to(scores, MIN_SCORE_THRESHOLD)
+    log.debug(f'results with score closer than {MIN_SCORE_THRESHOLD}: {scores}')
+    if len(scores) < 1:
+        # we didn't find anything; bail with no results.
+        return []
+    elif len(scores) == 1:
+        best_match = list(scores.keys())[0]
+        # if there was exactly one match, just play it.
+        s = f"Couldn't find an exact match for {name}, "
+        s += f"but I'll play `{best_match}` which is the "
+        s += "closest I can find."
+        await ctx.send(s)
+        return [best_match]
+
+    def score_from_pair(pair):
+        return pair[1]
+
+    high_scores = limit_to(scores, HIGH_SCORE_THRESHOLD)
+    log.debug(f'{high_scores=}')
+
+    high_scores_sorted = sorted(high_scores.items(),
+                                key=score_from_pair)
+    high_scores_sorted.reverse()
+    log.debug(f'{high_scores_sorted=}')
+
+    # we found something that's better than HIGH_SCORE_THRESHOLD
+    # so let the user know and return it to be played.
+    if len(high_scores_sorted) > 0:
+        best_match = high_scores_sorted[0]
+        s = f"Couldn't find an exact match for {name}, "
+        s += f"but I'll play `{best_match[0]}` which is pretty close."
+        await ctx.send(s)
+        return best_match
+
+    best_sounds = [k for k, v in scores.items()]
+    log.debug(f'{best_sounds=}')
+    s = f"I couldn't find a good match for {name} "
+    s += "but here's some things that are pretty close:\n"
+    s += "```{}```".format('\n'.join(best_sounds))
+    await ctx.send(s)
+    return []
+
+
 async def play_sound(ctx, name):
     try:
-        fname = find_sound(name)
 
+        # If the user typed in an exact match, use that.
+        if name in sounds:
+            fname = sound_name_to_filename(name)
+        # otherwise, perform a fuzzy search.
+        else:
+            search_results = await perform_fuzzy_search(ctx, name)
+            # results = find_sound(name)
+
+            if len(search_results) < 1:
+                return await ctx.author.send(f"I couldn't figure out how to play ```{name}```")
+            else:
+                fname = sound_name_to_filename(search_results[0])
+
+        log.debug(f'About to play a sound with the name {fname}.')
+        assert(os.path.exists(fname))
         loudness = await get_volume(fname)
         audio_filter = filter_settings(loudness)
 
@@ -178,9 +256,6 @@ async def play_sound(ctx, name):
                     e) if e else None)
         except AttributeError:
             await ctx.author.send('I need to be in a voice channel to do that!')
-
-    except KeyError:
-        await ctx.author.send(f"I don't know anything about ```{name}```")
 
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}\n```'
