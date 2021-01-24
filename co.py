@@ -8,6 +8,21 @@ import asyncio
 import re
 import traceback
 import sys
+import logging
+
+log = logging.getLogger('sqcobot')
+log.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+
+# create formatter
+formatter = logging.Formatter('[%(levelname)s] %(message)s')
+
+# add formatter to ch
+ch.setFormatter(formatter)
+
+# add ch to logger
+log.addHandler(ch)
 
 
 def get_mod_path():
@@ -22,7 +37,7 @@ audiodir = os.path.join(get_mod_path(), 'sounds')
 description = 'Kernels of wisdom from fighter pilot legends.'
 bot = dcmd.Bot(command_prefix='!co-', description=description)
 
-print(f'{audiodir=}')
+log.info(f'{audiodir=}')
 
 if not discord.opus.is_loaded():
     if not discord.opus._load_default():
@@ -31,7 +46,8 @@ if not discord.opus.is_loaded():
         # you should replace this with the location the
         # opus library is located in and with the proper filename.
         # note that on windows this DLL is automatically provided for you
-        print("Unable to find default location of libopus-0.so... trying opus.dll")
+        log.info(
+            "Unable to find default location of libopus-0.so... trying opus.dll")
         discord.opus.load_opus('opus')
 
 
@@ -133,12 +149,14 @@ def find_sound(name):
     # Get a alpha only, lowercase version of every sound name
     # and map it to the actual name
     def fuzzy_token(raw):
-        re.sub(r'[\W_]+', '', raw).lower()
+        return re.sub(r'[\W_]+', '', raw).lower()
 
     # Could totally cache this instead of rebuilding it each time...
     fuzzmap = dict(
         (fuzzy_token(s), f"{os.path.join(audiodir, s)}.ogg") for s in sounds)
 
+    log.debug('Searching for sound with name {name}.')
+    log.debug(f'{fuzzmap=}')
     return fuzzmap[fuzzy_token(name)]
 
 
@@ -167,7 +185,7 @@ async def play_sound(ctx, name):
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}\n```'
         exc_type, exc_value, exc_tb = sys.exc_info()
-        traceback.print_exc()
+        log.exception('Unhandled exception while processing the request')
         s = traceback.format_exception(exc_type, exc_value, exc_tb)
         await ctx.send(fmt.format(''.join(s)))
 
@@ -178,15 +196,16 @@ async def on_ready():
     file_list = glob.glob('{}/*.ogg'.format(audiodir))
     sounds = [os.path.split(fname)[1][:-4] for fname in file_list]
     sounds = sorted(sounds)
-    print('Logged in as')
-    print(f'{bot.user.name=}')
-    print(f'{bot.user.id}')
-    print('------')
+    log.info('Logged in as')
+    log.info(f'{bot.user.name=}')
+    log.info(f'{bot.user.id}')
+    log.info('------')
 
 
 if __name__ == '__main__':
     configfile = os.path.join(get_mod_path(), 'config.json')
     if not os.path.exists(configfile):
+        log.warning('Warning, config file not found.')
         print("Config file not found, please enter your auth token here:")
         token = input('--> ')
         token = token.strip()
