@@ -6,6 +6,8 @@ from discord.ext import commands as dcmd
 import json
 import asyncio
 import re
+import traceback
+import sys
 
 
 def get_mod_path():
@@ -163,8 +165,11 @@ async def play_sound(ctx, name):
         await ctx.author.send(f"I don't know anything about ```{name}```")
 
     except Exception as e:
-        fmt = 'An error occurred while processing this request: ```py\n{}: {}\n```'
-        await ctx.send(fmt.format(type(e).__name__, e))
+        fmt = 'An error occurred while processing this request: ```py\n{}\n```'
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        traceback.print_exc()
+        s = traceback.format_exception(exc_type, exc_value, exc_tb)
+        await ctx.send(fmt.format(''.join(s)))
 
 
 @bot.event
