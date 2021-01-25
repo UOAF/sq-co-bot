@@ -64,7 +64,7 @@ async def play(ctx, sound_name=''):
     if sound_name == '':
         msg = 'These are the topics I can tell you about:\n'
         msg += '```\n'
-        msg += '\n'.join(sounds)
+        msg += '\n'.join(sorted(sounds.values()))
         msg += '```'
         await ctx.author.send(msg)
     else:
@@ -145,31 +145,13 @@ def filter_settings(loudness):
     return "".join(crazy_ffmpeg_filter_lines)
 
 
-def sound_name_to_filename(name):
-    return f"{os.path.join(audiodir, name)}.ogg"
-
-# Do some fuzzy search (case-insensitive, alphanumerics only)
-
-
-def find_sound(name):
-
-    # Get a alpha only, lowercase version of every sound name
-    # and map it to the actual name
-
-    def fuzzy_token(raw):
-        return re.sub(r'[\W_]+', '', raw).lower()
-
-    # Could totally cache this instead of rebuilding it each time...
-    fuzzmap = dict(
-        (fuzzy_token(s), sound_name_to_filename(s)) for s in sounds)
-
-    log.debug('Searching for sound with name {name}.')
-    log.debug(f'{fuzzmap=}')
-    return fuzzmap[fuzzy_token(name)]
+# Get an alpha only, lowercase version of the given sound name
+def depunctuate(name):
+    return re.sub(r'[\W_]+', '', name).lower()
 
 
 def get_fuzzy_match_scores(name):
-    return {s: fuzz.ratio(name, s) for s in sounds}
+    return {s: fuzz.ratio(depunctuate(name), s) for s in sounds.keys()}
 
 
 async def perform_fuzzy_search(ctx, name):
@@ -190,7 +172,7 @@ async def perform_fuzzy_search(ctx, name):
         best_match = list(scores.keys())[0]
         # if there was exactly one match, just play it.
         s = f"Couldn't find an exact match for {name}, "
-        s += f"but I'll play `{best_match}` which is the "
+        s += f"but I'll play `{sounds[best_match]}` which is the "
         s += "closest I can find."
         await ctx.send(s)
         return [best_match]
@@ -211,7 +193,7 @@ async def perform_fuzzy_search(ctx, name):
     if len(high_scores_sorted) > 0:
         best_match = high_scores_sorted[0]
         s = f"Couldn't find an exact match for {name}, "
-        s += f"but I'll play `{best_match[0]}` which is pretty close."
+        s += f"but I'll play `{sounds[best_match[0]]}` which is pretty close."
         await ctx.send(s)
         return best_match
 
@@ -219,7 +201,7 @@ async def perform_fuzzy_search(ctx, name):
     log.debug(f'{best_sounds=}')
     s = f"I couldn't find a good match for {name} "
     s += "but here's some things that are pretty close:\n"
-    s += "```{}```".format('\n'.join(best_sounds))
+    s += "```{}```".format('\n'.join(sounds[b] for b in best_sounds))
     await ctx.send(s)
     return []
 
@@ -228,7 +210,7 @@ async def play_sound(ctx, name):
     try:
 
         # If the user typed in an exact match, use that.
-        if name in sounds:
+        if name in sounds.values():
             fname = sound_name_to_filename(name)
         # otherwise, perform a fuzzy search.
         else:
@@ -238,7 +220,7 @@ async def play_sound(ctx, name):
             if len(search_results) < 1:
                 return await ctx.author.send(f"I couldn't figure out how to play ```{name}```")
             else:
-                fname = sound_name_to_filename(search_results[0])
+                fname = sound_name_to_filename(sounds[search_results[0]])
 
         log.debug(f'About to play a sound with the name {fname}.')
         assert(os.path.exists(fname))
@@ -265,12 +247,17 @@ async def play_sound(ctx, name):
         await ctx.send(fmt.format(''.join(s)))
 
 
+def sound_name_to_filename(name):
+    return f"{os.path.join(audiodir, name)}.ogg"
+
+
 @bot.event
 async def on_ready():
     global sounds
     file_list = glob.glob('{}/*.ogg'.format(audiodir))
     sounds = [os.path.split(fname)[1][:-4] for fname in file_list]
-    sounds = sorted(sounds)
+    # Map the depunctuated version of each sound name to their actual name
+    sounds = dict((depunctuate(s), s) for s in sounds)
     log.info('Logged in as')
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')
