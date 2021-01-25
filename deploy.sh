@@ -10,5 +10,3 @@ echo "::::::::::: Git reset in working dir"
 git reset --hard origin/master
 echo "::::::::::: starting sqcobot.service"
 systemctl --user start sqcobot.service
-echo "::::::::::: giving execution and server permissions back to deploy.sh"
-chmod u+x deploy.sh
