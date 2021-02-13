@@ -61,6 +61,10 @@ async def hello(ctx):
 
 @bot.command(description='Solicit some wisdom from the CO.')
 async def play(ctx, sound_name=''):
+    if 'sounds' not in globals():
+        await ctx.author.send('Starting up, give me a minute!')
+        return
+
     if sound_name == '':
         msg = 'These are the topics I can tell you about:\n'
         msg += '```\n'
@@ -255,9 +259,9 @@ def sound_name_to_filename(name):
 async def on_ready():
     global sounds
     file_list = glob.glob('{}/*.ogg'.format(audiodir))
-    sounds = [os.path.split(fname)[1][:-4] for fname in file_list]
+    sound_list = [os.path.split(fname)[1][:-4] for fname in file_list]
     # Map the depunctuated version of each sound name to their actual name
-    sounds = dict((depunctuate(s), s) for s in sounds)
+    sounds = dict((depunctuate(s), s) for s in sound_list)
     log.info('Logged in as')
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')
