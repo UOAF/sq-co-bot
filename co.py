@@ -9,6 +9,7 @@ import re
 import traceback
 import sys
 import logging
+from textwrap import wrap
 from fuzzywuzzy import fuzz
 import datetime
 
@@ -33,6 +34,20 @@ def get_mod_path():
     return dirname
 
 
+def chunk_strings_into(li, chunksize):
+    """
+    Given a list of strings, return a list of lists. The total length
+    of all strings in each nested list is no larger than chunksize.
+    """
+    chunked = [
+        x.split() for x in wrap(' '.join(li),
+                                width=chunksize,
+                                break_long_words=False,
+                                break_on_hyphens=False)
+    ]
+    return chunked
+
+
 client = discord.Client()
 
 audiodir = os.path.join(get_mod_path(), 'sounds')
@@ -49,7 +64,8 @@ if not discord.opus.is_loaded():
         # opus library is located in and with the proper filename.
         # note that on windows this DLL is automatically provided for you
         log.info(
-            "Unable to find default location of libopus-0.so... trying opus.dll")
+            "Unable to find default location of libopus-0.so... trying opus.dll"
+        )
         discord.opus.load_opus('opus')
 
 
@@ -59,19 +75,37 @@ async def hello(ctx):
     msg = 'Hello {}'.format(author.mention)
     await ctx.send(msg)
 
+PLAY_DESC = 'Solicit some wisdom from the CO, ' + \
+    'or get a list of topics known to him.'
 
-@bot.command(description='Solicit some wisdom from the CO.')
+desc = 'get a list of commands'
+PLAY_HELP = f'{"!co-play: ":<25} {desc}\n'
+desc = 'play a sound'
+PLAY_HELP += f'{"!co-play <sound name>: ":<25} {desc}'
+
+
+@bot.command(description=PLAY_DESC, help=PLAY_HELP)
 async def play(ctx, sound_name=''):
+    """Solicit some wisdom from the CO, or get a list of topics known to him."""
     if 'sounds' not in globals():
         await ctx.author.send('Starting up, give me a minute!')
         return
 
+    DISCORD_MAX_MESSAGE_LEN = 2000
+    HELP_MSG_PREAMBLE = 'These are the topics I can tell you about:\n'
+    chunksize = DISCORD_MAX_MESSAGE_LEN - len(HELP_MSG_PREAMBLE) - 32
+    sounds_sorted = sorted(sounds.values())
+    sounds_chunked = chunk_strings_into(sounds_sorted, chunksize)
+
     if sound_name == '':
-        msg = 'These are the topics I can tell you about:\n'
-        msg += '```\n'
-        msg += '\n'.join(sorted(sounds.values()))
-        msg += '```'
-        await ctx.author.send(msg)
+        msg = HELP_MSG_PREAMBLE
+        for sound_list in sounds_chunked:
+            msg += '```\n'
+            msg += '\n'.join(sound_list)
+            msg += '```'
+            await ctx.author.send(msg)
+            msg = ''
+            await asyncio.sleep(0.1)
     else:
         await play_sound(ctx, sound_name)
 
@@ -122,14 +156,20 @@ async def stop(ctx):
 
 async def get_volume(fname):
     process = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-hide_banner", "-i", fname,
-        "-af", "loudnorm=print_format=json",
-        "-f", "null", "-",
-        stderr=asyncio.subprocess.PIPE
-    )
+        "ffmpeg",
+        "-hide_banner",
+        "-i",
+        fname,
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-",
+        stderr=asyncio.subprocess.PIPE)
     _, stderr = await process.communicate()
     # Lol ffmpeg doesn't meaningfully split output JSON from other junk.
     return json.loads("{" + stderr.decode().strip().split("{")[-1])
+
 
 # Feed loudness measurements from the previous run into
 # the one that actually plays the sound.
@@ -140,8 +180,7 @@ async def get_volume(fname):
 
 def filter_settings(loudness):
     crazy_ffmpeg_filter_lines = [
-        "loudnorm=i=-15:tp=0:",
-        f"measured_i={loudness['input_i']}:",
+        "loudnorm=i=-15:tp=0:", f"measured_i={loudness['input_i']}:",
         f"measured_tp={loudness['input_tp']}:",
         f"measured_lra={loudness['input_lra']}:",
         f"measured_thresh={loudness['input_thresh']}:",
@@ -169,7 +208,8 @@ async def perform_fuzzy_search(ctx, name):
         return {name: score for name, score in scores.items() if score > level}
 
     scores = limit_to(scores, MIN_SCORE_THRESHOLD)
-    log.debug(f'results with score closer than {MIN_SCORE_THRESHOLD}: {scores}')
+    log.debug(
+        f'results with score closer than {MIN_SCORE_THRESHOLD}: {scores}')
     if len(scores) < 1:
         # we didn't find anything; bail with no results.
         return []
@@ -188,8 +228,7 @@ async def perform_fuzzy_search(ctx, name):
     high_scores = limit_to(scores, HIGH_SCORE_THRESHOLD)
     log.debug(f'{high_scores=}')
 
-    high_scores_sorted = sorted(high_scores.items(),
-                                key=score_from_pair)
+    high_scores_sorted = sorted(high_scores.items(), key=score_from_pair)
     high_scores_sorted.reverse()
     log.debug(f'{high_scores_sorted=}')
 
@@ -223,26 +262,26 @@ async def play_sound(ctx, name):
             # results = find_sound(name)
 
             if len(search_results) < 1:
-                return await ctx.author.send(f"I couldn't figure out how to play ```{name}```")
+                return await ctx.author.send(
+                    f"I couldn't figure out how to play ```{name}```")
             else:
                 fname = sound_name_to_filename(sounds[search_results[0]])
 
         log.debug(f'About to play a sound with the name {fname}.')
-        assert(os.path.exists(fname))
+        assert (os.path.exists(fname))
         loudness = await get_volume(fname)
         audio_filter = filter_settings(loudness)
 
-        source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(
-            source=fname,
-            options="-af " + audio_filter
-        ))
+        source = discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(source=fname,
+                                   options="-af " + audio_filter))
         try:
-            ctx.voice_client.play(
-                source, after=lambda e: print(
-                    'Player error: %s' %
-                    e) if e else None)
+            ctx.voice_client.play(source,
+                                  after=lambda e: print('Player error: %s' % e)
+                                  if e else None)
         except AttributeError:
-            await ctx.author.send('I need to be in a voice channel to do that!')
+            await ctx.author.send('I need to be in a voice channel to do that!'
+                                  )
 
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}\n```'
@@ -267,7 +306,8 @@ async def on_ready():
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')
     log.info('------')
-        
+
+
 @bot.event
 async def on_error(event, *args, **kwargs):
     RGB_ERROR_RED = 0xE74C3C
