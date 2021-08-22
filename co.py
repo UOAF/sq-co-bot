@@ -10,6 +10,7 @@ import traceback
 import sys
 import logging
 from fuzzywuzzy import fuzz
+import datetime
 
 log = logging.getLogger('sqcobot')
 log.setLevel(logging.INFO)
@@ -266,6 +267,16 @@ async def on_ready():
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')
     log.info('------')
+        
+@bot.event
+async def on_error(event, *args, **kwargs):
+    RGB_ERROR_RED = 0xE74C3C
+    embed = discord.Embed(title=':x: Event Error', colour=RGB_ERROR_RED)
+    embed.add_field(name='Event', value=event)
+    embed.description = '```py\n%s\n```' % traceback.format_exc()
+    embed.timestamp = datetime.datetime.utcnow()
+    log.warning(traceback.format_exc())
+    await bot.AppInfo.owner.send(embed=embed)
 
 
 if __name__ == '__main__':
