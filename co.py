@@ -116,7 +116,7 @@ async def play(ctx: ApplicationContext, sound_name: str):
         await ctx.respond('Starting up, give me a minute!')
         return
 
-    await ctx.respond('Playing `{sound_name}`.')
+    await ctx.respond(f'Playing `{sound_name}`.')
     await play_sound(ctx, sound_name)
 
 
