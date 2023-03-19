@@ -79,10 +79,7 @@ if not discord.opus.is_loaded():
 async def perform_fuzzy_search(ctx: AutocompleteContext) -> typing.List[str]:
     name = ctx.options['sound_name']
     scores = get_fuzzy_match_scores(name)
-
     scores = sorted(scores, key=scores.get, reverse=True)
-
-    print([sounds[s] for s in scores])
     log.debug(f'fuzzy search results for {name}: {scores}')
     return [sounds[s] for s in scores]
 
