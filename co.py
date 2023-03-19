@@ -48,11 +48,15 @@ def chunk_strings_into(li, chunksize):
     return chunked
 
 
-client = discord.Client()
+intents = discord.Intents.default()
+intents.guild_messages = True
+intents.dm_messages = True
+intents.message_content = True
+intents.messages = True
 
 audiodir = os.path.join(get_mod_path(), 'sounds')
 description = 'Kernels of wisdom from fighter pilot legends.'
-bot = dcmd.Bot(command_prefix='!co-', description=description)
+bot = dcmd.Bot(intents=intents, command_prefix='!co-', description=description)
 
 log.info(f'{audiodir=}')
 
