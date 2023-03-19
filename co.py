@@ -18,13 +18,8 @@ log.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 
-# create formatter
 formatter = logging.Formatter('[%(levelname)s] %(message)s')
-
-# add formatter to ch
 ch.setFormatter(formatter)
-
-# add ch to logger
 log.addHandler(ch)
 
 
@@ -338,4 +333,4 @@ if __name__ == '__main__':
         token = config['token']
         if token == 'YOUR_TOKEN_HERE':
             raise ValueError("You must set a token in config.json.")
-    bot.run(token)
+    bot.run(token, log_handler=ch)
