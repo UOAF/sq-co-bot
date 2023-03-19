@@ -1,4 +1,6 @@
 import discord
+from discord import AutocompleteContext, ApplicationContext
+from discord.utils import basic_autocomplete
 import os
 import os.path
 import glob
@@ -12,6 +14,7 @@ import logging
 from textwrap import wrap
 from fuzzywuzzy import fuzz
 import datetime
+import typing
 
 log = logging.getLogger('sqcobot')
 log.setLevel(logging.INFO)
@@ -21,6 +24,8 @@ ch.setLevel(logging.INFO)
 formatter = logging.Formatter('[%(levelname)s] %(message)s')
 ch.setFormatter(formatter)
 log.addHandler(ch)
+logging.getLogger('discord').addHandler(ch)
+logging.getLogger('discord').setLevel(logging.INFO)
 
 
 def get_mod_path():
@@ -51,7 +56,10 @@ intents.messages = True
 
 audiodir = os.path.join(get_mod_path(), 'sounds')
 description = 'Kernels of wisdom from fighter pilot legends.'
-bot = dcmd.Bot(intents=intents, command_prefix='!co-', description=description)
+bot = dcmd.Bot(intents=intents,
+               command_prefix='!co-',
+               description=description,
+               debug_guilds=[582602200619024406])
 
 log.info(f'{audiodir=}')
 
@@ -68,89 +76,112 @@ if not discord.opus.is_loaded():
         discord.opus.load_opus('opus')
 
 
-@bot.command(description='Send friendly salutations to this bot.')
-async def hello(ctx):
-    author = ctx.author
-    msg = 'Hello {}'.format(author.mention)
-    await ctx.send(msg)
+async def perform_fuzzy_search(ctx: AutocompleteContext) -> typing.List[str]:
+    name = ctx.options['sound_name']
+    scores = get_fuzzy_match_scores(name)
 
-PLAY_DESC = 'Solicit some wisdom from the CO, ' + \
-    'or get a list of topics known to him.'
+    scores = sorted(scores, key=scores.get, reverse=True)
 
-desc = 'get a list of commands'
-PLAY_HELP = f'{"!co-play: ":<25} {desc}\n'
-desc = 'play a sound'
-PLAY_HELP += f'{"!co-play <sound name>: ":<25} {desc}'
+    print([sounds[s] for s in scores])
+    log.debug(f'fuzzy search results for {name}: {scores}')
+    return [sounds[s] for s in scores]
 
 
-@bot.command(description=PLAY_DESC, help=PLAY_HELP)
-async def play(ctx, sound_name=''):
-    """Solicit some wisdom from the CO, or get a list of topics known to him."""
-    if 'sounds' not in globals():
-        await ctx.author.send('Starting up, give me a minute!')
-        return
-
+@bot.slash_command(name='list', description='List possible sounds')
+async def list_sounds(ctx: ApplicationContext):
     DISCORD_MAX_MESSAGE_LEN = 2000
     HELP_MSG_PREAMBLE = 'These are the topics I can tell you about:\n'
     chunksize = DISCORD_MAX_MESSAGE_LEN - len(HELP_MSG_PREAMBLE) - 32
     sounds_sorted = sorted(sounds.values())
     sounds_chunked = chunk_strings_into(sounds_sorted, chunksize)
+    await ctx.respond(f"Sending a list of sounds to {ctx.author.display_name}")
+
+    msg = HELP_MSG_PREAMBLE
+    for sound_list in sounds_chunked:
+        msg += '```\n'
+        msg += '\n'.join(sound_list)
+        msg += '```'
+        await ctx.author.send(msg)
+        msg = ''
+        await asyncio.sleep(0.1)
+
+
+PLAY_DESC = 'Solicit some wisdom from the CO.'
+
+
+@bot.slash_command(name='play', description=PLAY_DESC)
+@discord.option("sound_name",
+                description='Name of the sound to play',
+                autocomplete=perform_fuzzy_search)
+async def play(ctx: ApplicationContext, sound_name: str):
+    """Solicit some wisdom from the CO."""
+    if 'sounds' not in globals():
+        await ctx.respond('Starting up, give me a minute!')
+        return
 
     if sound_name == '':
-        msg = HELP_MSG_PREAMBLE
-        for sound_list in sounds_chunked:
-            msg += '```\n'
-            msg += '\n'.join(sound_list)
-            msg += '```'
-            await ctx.author.send(msg)
-            msg = ''
-            await asyncio.sleep(0.1)
-    else:
-        await play_sound(ctx, sound_name)
+        await list_sounds(ctx)
+        return
+
+    await play_sound(ctx, sound_name)
 
 
-async def join_channel(ctx, channel, errmsg=None):
+async def join_channel(ctx, channel):
     if ctx.voice_client is not None:
-        try:
-            await ctx.voice_client.move_to(channel)
-        except dcmd.errors.BadArgument:
-            if errmsg is not None:
-                await ctx.send(errmsg)
+        await ctx.voice_client.move_to(channel)
     else:
-        try:
-            await channel.connect()
-        except dcmd.errors.BadArgument:
-            if errmsg is not None:
-                await ctx.author.send(errmsg)
+        await channel.connect()
 
 
-@bot.command(description="Join the given voice channel.")
-async def join(ctx, *, channel: discord.VoiceChannel):
+async def list_voice_channels(ctx: ApplicationContext):
+    channels = ctx.guild.voice_channels
+    return [channel.name for channel in channels]
+
+
+@bot.slash_command(description="Join the given voice channel.")
+async def join(ctx: ApplicationContext, channel: discord.VoiceChannel):
     """Joins a voice channel"""
-    errmsg = "Can't find channel by the name of {}".format(channel)
-    await join_channel(ctx, channel, errmsg)
-
-
-@bot.command(description="Join the user's voice channel.")
-async def summon(ctx):
-    if ctx.author.voice and ctx.author.voice.channel:
-        channel = ctx.author.voice.channel
+    ctx.guild.voice_channels[0]
+    try:
         await join_channel(ctx, channel)
+    except dcmd.errors.BadArgument:
+        await ctx.respond(f"Can't find channel by the name of {channel}")
     else:
-        await ctx.message.send("You are not connected to a voice channel")
+        await ctx.respond(f"Joined {channel}")
 
 
-@bot.command(description="Leave any connected voice channel.")
-async def leave(ctx):
+@bot.slash_command(description="Join your current voice channel")
+async def summon(ctx: ApplicationContext):
+    is_in_voice = ctx.author.voice and ctx.author.voice.channel
+    if not is_in_voice:
+        await ctx.respond("You are not connected to a voice channel")
+        return
+
+    channel = ctx.author.voice.channel
+    try:
+        await join_channel(ctx, channel)
+    except dcmd.errors.BadArgument:
+        await ctx.respond(
+            f"Tried to summon the bot to {channel}, but it could not be found")
+    else:
+        await ctx.respond(f"Joined {channel.name}")
+
+
+@bot.slash_command(description="Leave any connected voice channel.")
+async def leave(ctx: ApplicationContext):
+    channel = ctx.voice_client.channel
     try:
         await ctx.voice_client.disconnect()
     except AttributeError:
-        await ctx.author.send("I'm not in any voice channel on this server!")
+        await ctx.respond("I'm not in any voice channel on this server!")
+    else:
+        await ctx.respond(f"Leaving {channel}")
 
 
-@bot.command(description="Stops any audio being played.")
-async def stop(ctx):
-    ctx.voice_client.stop()
+@bot.slash_command(description="Stops any audio being played.")
+async def stop(ctx: ApplicationContext):
+    ctx.voice_clirespondent.stop()
+    await ctx.respond("Sorry, shutting up!")
 
 
 async def get_volume(fname):
@@ -189,84 +220,20 @@ def filter_settings(loudness):
 
 
 # Get an alpha only, lowercase version of the given sound name
-def depunctuate(name):
+def depunctuate(name: str):
     return re.sub(r'[\W_]+', '', name).lower()
 
 
-def get_fuzzy_match_scores(name):
-    return {s: fuzz.ratio(depunctuate(name), s) for s in sounds.keys()}
-
-
-async def perform_fuzzy_search(ctx, name):
-    MIN_SCORE_THRESHOLD = 50
-    HIGH_SCORE_THRESHOLD = 70
-    scores = get_fuzzy_match_scores(name)
-    log.debug(f'fuzzy search results for {name}: {scores}')
-
-    def limit_to(scores, level):
-        return {name: score for name, score in scores.items() if score > level}
-
-    scores = limit_to(scores, MIN_SCORE_THRESHOLD)
-    log.debug(
-        f'results with score closer than {MIN_SCORE_THRESHOLD}: {scores}')
-    if len(scores) < 1:
-        # we didn't find anything; bail with no results.
-        return []
-    elif len(scores) == 1:
-        best_match = list(scores.keys())[0]
-        # if there was exactly one match, just play it.
-        s = f"Couldn't find an exact match for {name}, "
-        s += f"but I'll play `{sounds[best_match]}` which is the "
-        s += "closest I can find."
-        await ctx.send(s)
-        return [best_match]
-
-    def score_from_pair(pair):
-        return pair[1]
-
-    high_scores = limit_to(scores, HIGH_SCORE_THRESHOLD)
-    log.debug(f'{high_scores=}')
-
-    high_scores_sorted = sorted(high_scores.items(), key=score_from_pair)
-    high_scores_sorted.reverse()
-    log.debug(f'{high_scores_sorted=}')
-
-    # we found something that's better than HIGH_SCORE_THRESHOLD
-    # so let the user know and return it to be played.
-    if len(high_scores_sorted) > 0:
-        best_match = high_scores_sorted[0]
-        s = f"Couldn't find an exact match for {name}, "
-        s += f"but I'll play `{sounds[best_match[0]]}` which is pretty close."
-        await ctx.send(s)
-        return best_match
-
-    best_sounds = [k for k, v in scores.items()]
-    log.debug(f'{best_sounds=}')
-    s = f"I couldn't find a good match for {name} "
-    s += "but here's some things that are pretty close:\n"
-    s += "```{}```".format('\n'.join(sounds[b] for b in best_sounds))
-    await ctx.send(s)
-    return []
+def get_fuzzy_match_scores(name: str):
+    return {s: fuzz.partial_ratio(depunctuate(name), s) for s in sounds.keys()}
 
 
 async def play_sound(ctx, name):
     try:
-
-        # If the user typed in an exact match, use that.
         if name in sounds.values():
             fname = sound_name_to_filename(name)
-        # otherwise, perform a fuzzy search.
-        else:
-            search_results = await perform_fuzzy_search(ctx, name)
-            # results = find_sound(name)
 
-            if len(search_results) < 1:
-                return await ctx.author.send(
-                    f"I couldn't figure out how to play ```{name}```")
-            else:
-                fname = sound_name_to_filename(sounds[search_results[0]])
-
-        log.debug(f'About to play a sound with the name {fname}.')
+        log.info(f'About to play a sound with the name {fname}.')
         assert (os.path.exists(fname))
         loudness = await get_volume(fname)
         audio_filter = filter_settings(loudness)
@@ -279,8 +246,7 @@ async def play_sound(ctx, name):
                                   after=lambda e: print('Player error: %s' % e)
                                   if e else None)
         except AttributeError:
-            await ctx.author.send('I need to be in a voice channel to do that!'
-                                  )
+            await ctx.respond('I need to be in a voice channel to do that!')
 
     except Exception as e:
         fmt = 'An error occurred while processing this request: ```py\n{}\n```'
@@ -301,6 +267,7 @@ async def on_ready():
     sound_list = [os.path.split(fname)[1][:-4] for fname in file_list]
     # Map the depunctuated version of each sound name to their actual name
     sounds = dict((depunctuate(s), s) for s in sound_list)
+    log.info(f'Found {len(sounds)} sounds.')
     log.info('Logged in as')
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')
@@ -333,4 +300,4 @@ if __name__ == '__main__':
         token = config['token']
         if token == 'YOUR_TOKEN_HERE':
             raise ValueError("You must set a token in config.json.")
-    bot.run(token, log_handler=ch)
+    bot.run(token)
