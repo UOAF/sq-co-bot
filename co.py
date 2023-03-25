@@ -116,6 +116,10 @@ async def play(ctx: ApplicationContext, sound_name: str):
         await ctx.respond('Starting up, give me a minute!')
         return
 
+    log.debug(f'{ctx.voice_client=}')
+    if ctx.voice_client is not None:
+        log.debug(f'{ctx.voice_client.is_connected()=}')
+
     if ctx.voice_client is not None and not ctx.voice_client.is_connected():
         await ctx.respond(f'I need to be in a voice channel to do that!')
         return
@@ -150,18 +154,24 @@ async def join(ctx: ApplicationContext, channel: discord.VoiceChannel):
 
 @bot.slash_command(description="Join your current voice channel")
 async def summon(ctx: ApplicationContext):
+    log.debug(f'Ran summon')
     is_in_voice = ctx.author.voice and ctx.author.voice.channel
     if not is_in_voice:
+        log.debug(f'Not in voice')
         await ctx.respond("You are not connected to a voice channel")
         return
 
     channel = ctx.author.voice.channel
+    log.debug('Joinig channel')
     try:
         await join_channel(ctx, channel)
     except dcmd.errors.BadArgument:
+        log.warn(
+            f'Failed summon command to {channel=}, {ctx=}, {ctx.author.name=}')
         await ctx.respond(
             f"Tried to summon the bot to {channel}, but it could not be found")
     else:
+        log.info(f'Connected to {channel.name}')
         await ctx.respond(f"Joined {channel.name}")
 
 
@@ -284,6 +294,7 @@ async def on_error(event, *args, **kwargs):
 
 
 if __name__ == '__main__':
+    log.info(f"Loading with py-cord version {discord.__version__}")
     configfile = os.path.join(get_mod_path(), 'config.json')
     if not os.path.exists(configfile):
         log.warning('Warning, config file not found.')
