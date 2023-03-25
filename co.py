@@ -116,6 +116,10 @@ async def play(ctx: ApplicationContext, sound_name: str):
         await ctx.respond('Starting up, give me a minute!')
         return
 
+    if ctx.voice_client is not None and not ctx.voice_client.is_connected():
+        await ctx.respond(f'I need to be in a voice channel to do that!')
+        return
+
     await ctx.respond(f'Playing `{sound_name}`.')
     await play_sound(ctx, sound_name)
 
@@ -222,7 +226,7 @@ def get_fuzzy_match_scores(name: str):
     return {s: fuzz.partial_ratio(depunctuate(name), s) for s in sounds.keys()}
 
 
-async def play_sound(ctx, name):
+async def play_sound(ctx: ApplicationContext, name):
     try:
         if name in sounds.values():
             fname = sound_name_to_filename(name)
@@ -239,7 +243,7 @@ async def play_sound(ctx, name):
             ctx.voice_client.play(source,
                                   after=lambda e: print('Player error: %s' % e)
                                   if e else None)
-        except AttributeError:
+        except discord.ClientException(e):
             await ctx.respond('I need to be in a voice channel to do that!')
 
     except Exception as e:
