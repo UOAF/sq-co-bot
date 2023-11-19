@@ -124,6 +124,11 @@ async def play(ctx: ApplicationContext, sound_name: str):
         await ctx.respond(f'I need to be in a voice channel to do that!')
         return
 
+    if sound_name not in sounds.values():
+        await ctx.respond(f"I don't know how to play `{sound_name}`.\n"
+                          "Any sound I know will show up in the menu.")
+        return
+
     await ctx.respond(f'Playing `{sound_name}`.')
     await play_sound(ctx, sound_name)
 
@@ -238,8 +243,8 @@ def get_fuzzy_match_scores(name: str):
 
 async def play_sound(ctx: ApplicationContext, name):
     try:
-        if name in sounds.values():
-            fname = sound_name_to_filename(name)
+        assert (name in sounds.values())
+        fname = sound_name_to_filename(name)
 
         log.info(f'About to play a sound with the name {fname}.')
         assert (os.path.exists(fname))
