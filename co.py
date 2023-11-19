@@ -116,11 +116,13 @@ async def play(ctx: ApplicationContext, sound_name: str):
         await ctx.respond('Starting up, give me a minute!')
         return
 
-    log.debug(f'{ctx.voice_client=}')
-    if ctx.voice_client is not None:
-        log.debug(f'{ctx.voice_client.is_connected()=}')
+    if ctx.voice_client is None:
+        await ctx.respond(f'I need to be in a voice channel to do that!')
+        return
 
-    if ctx.voice_client is not None and not ctx.voice_client.is_connected():
+    log.debug(f'Client voice connection: {ctx.voice_client.is_connected()=}')
+
+    if not ctx.voice_client.is_connected():
         await ctx.respond(f'I need to be in a voice channel to do that!')
         return
 
@@ -258,7 +260,8 @@ async def play_sound(ctx: ApplicationContext, name):
             ctx.voice_client.play(source,
                                   after=lambda e: print('Player error: %s' % e)
                                   if e else None)
-        except discord.ClientException(e):
+        except discord.ClientException:
+            log.exception(f"Got ClientException when trying to play {fname}")
             await ctx.respond('I need to be in a voice channel to do that!')
 
     except Exception as e:
