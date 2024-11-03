@@ -302,7 +302,7 @@ if __name__ == '__main__':
 
     log = logging.getLogger('sqcobot')
 
-    configfile = os.path.join(get_mod_path(), 'config.json')
+    configfile = os.path.join(os.getcwd(), 'config.json')
     if not os.path.exists(configfile):
         log.warning('Warning, config file not found.')
         print("Config file not found, please enter your auth token here:")
