@@ -15,6 +15,8 @@ from textwrap import wrap
 from fuzzywuzzy import fuzz
 import datetime
 import typing
+from collections import defaultdict
+import argparse
 
 global log
 
@@ -49,18 +51,6 @@ description = 'Kernels of wisdom from fighter pilot legends.'
 bot = dcmd.Bot(intents=intents,
                description=description,
                debug_guilds=[582602200619024406])
-
-if not discord.opus.is_loaded():
-    if not discord.opus._load_default():
-        # the 'opus' library here is opus.dll on windows
-        # or libopus.so on linux in the current directory
-        # you should replace this with the location the
-        # opus library is located in and with the proper filename.
-        # note that on windows this DLL is automatically provided for you
-        log.info(
-            "Unable to find default location of libopus-0.so... trying opus.dll"
-        )
-        discord.opus.load_opus('opus')
 
 
 async def perform_fuzzy_search(ctx: AutocompleteContext) -> typing.List[str]:
@@ -192,7 +182,21 @@ async def stop(ctx: ApplicationContext):
     await ctx.respond("Sorry, shutting up!")
 
 
-async def get_volume(fname):
+def parse_volume_stats(ffmpeg_output_text):
+    index = ffmpeg_output_text.find('[Parsed_loudnorm_0')
+    start = ffmpeg_output_text.find('{', index)
+    end = ffmpeg_output_text.rfind('}')
+    log.debug(f"{start=}, {end=}")
+    json_result = ffmpeg_output_text[start:end + 1]
+
+    log.debug("**********************************************************")
+    log.debug(json_result)
+    log.debug("**********************************************************")
+    return json_result
+    # Lol ffmpeg doesn't meaningfully split output JSON from other junk.
+
+
+async def get_loudness_stats(fname):
     process = await asyncio.create_subprocess_exec(
         "ffmpeg",
         "-hide_banner",
@@ -205,8 +209,9 @@ async def get_volume(fname):
         "-",
         stderr=asyncio.subprocess.PIPE)
     _, stderr = await process.communicate()
-    # Lol ffmpeg doesn't meaningfully split output JSON from other junk.
-    return json.loads("{" + stderr.decode().strip().split("{")[-1])
+
+    ffmpeg_output_text = stderr.decode().strip()
+    return parse_volume_stats(ffmpeg_output_text)
 
 
 # Feed loudness measurements from the previous run into
@@ -243,7 +248,8 @@ async def play_sound(ctx: ApplicationContext, name):
 
         log.info(f'About to play a sound with the name {fname}.')
         assert (os.path.exists(fname))
-        loudness = await get_volume(fname)
+        ffmpeg_loudness_result = await get_loudness_stats(fname)
+        loudness = json.loads(ffmpeg_loudness_result)
         audio_filter = filter_settings(loudness)
 
         source = discord.PCMVolumeTransformer(
@@ -271,12 +277,6 @@ def sound_name_to_filename(name):
 
 @bot.event
 async def on_ready():
-    global sounds
-    file_list = glob.glob('{}/*.ogg'.format(audiodir))
-    sound_list = [os.path.split(fname)[1][:-4] for fname in file_list]
-    # Map the depunctuated version of each sound name to their actual name
-    sounds = dict((depunctuate(s), s) for s in sound_list)
-    log.info(f'Found {len(sounds)} sounds.')
     log.info(f'Logged in as {bot.user.name}, user id {bot.user.id}')
     log.info('------')
 
@@ -293,7 +293,10 @@ async def on_error(event, *args, **kwargs):
 
 
 if __name__ == '__main__':
-    from collections import defaultdict
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--test', action='store_true')
+    args = parser.parse_args()
+
     levels = defaultdict(lambda: logging.INFO, logging._nameToLevel)
     global audiodir
 
@@ -324,6 +327,18 @@ if __name__ == '__main__':
     audiodir = os.path.join(get_mod_path(), 'sounds')
     log.info(f'{audiodir=}')
 
+    if not discord.opus.is_loaded():
+        if not discord.opus._load_default():
+            # the 'opus' library here is opus.dll on windows
+            # or libopus.so on linux in the current directory
+            # you should replace this with the location the
+            # opus library is located in and with the proper filename.
+            # note that on windows this DLL is automatically provided for you
+            log.info(
+                "Unable to find default location of libopus-0.so... trying opus.dll"
+            )
+            discord.opus.load_opus('opus')
+
     formatter = logging.Formatter('[%(levelname)s] %(message)s')
     ch.setFormatter(formatter)
     log.addHandler(ch)
@@ -331,5 +346,21 @@ if __name__ == '__main__':
     logging.getLogger('discord').setLevel(log_level)
 
     log.info(f"Loading with py-cord version {discord.__version__}")
+    global sounds
+    file_list = glob.glob('{}/*.ogg'.format(audiodir))
+    sound_list = [os.path.split(fname)[1][:-4] for fname in file_list]
+    # Map the depunctuated version of each sound name to their actual name
+    sounds = dict((depunctuate(s), s) for s in sound_list)
+    log.info(f'Found {len(sounds)} sounds.')
 
-    bot.run(token)
+    if not args.test:
+        bot.run(token)
+    else:
+        sound_file = sound_name_to_filename('boola')
+        print(f"Running test on sound file {sound_file}")
+
+        async def run_test():
+            result = await get_loudness_stats(sound_file)
+            print(result)
+
+        asyncio.run(run_test())
