@@ -16,16 +16,7 @@ from fuzzywuzzy import fuzz
 import datetime
 import typing
 
-log = logging.getLogger('sqcobot')
-log.setLevel(logging.INFO)
-ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
-
-formatter = logging.Formatter('[%(levelname)s] %(message)s')
-ch.setFormatter(formatter)
-log.addHandler(ch)
-logging.getLogger('discord').addHandler(ch)
-logging.getLogger('discord').setLevel(logging.INFO)
+global log
 
 
 def get_mod_path():
@@ -54,14 +45,10 @@ intents.dm_messages = True
 intents.message_content = True
 intents.messages = True
 
-audiodir = os.path.join(get_mod_path(), 'sounds')
 description = 'Kernels of wisdom from fighter pilot legends.'
 bot = dcmd.Bot(intents=intents,
-               command_prefix='!co-',
                description=description,
                debug_guilds=[582602200619024406])
-
-log.info(f'{audiodir=}')
 
 if not discord.opus.is_loaded():
     if not discord.opus._load_default():
@@ -82,6 +69,12 @@ async def perform_fuzzy_search(ctx: AutocompleteContext) -> typing.List[str]:
     scores = sorted(scores, key=scores.get, reverse=True)
     log.debug(f'fuzzy search results for {name}: {scores}')
     return [sounds[s] for s in scores]
+
+
+@bot.slash_command(description="Sends the bot's latency."
+                   )  # this decorator makes a slash command
+async def ping(ctx):  # a slash command will be created with the name "ping"
+    await ctx.respond(f"Pong! Latency is {bot.latency}")
 
 
 @bot.slash_command(name='list', description='List possible sounds')
@@ -284,9 +277,7 @@ async def on_ready():
     # Map the depunctuated version of each sound name to their actual name
     sounds = dict((depunctuate(s), s) for s in sound_list)
     log.info(f'Found {len(sounds)} sounds.')
-    log.info('Logged in as')
-    log.info(f'{bot.user.name=}')
-    log.info(f'{bot.user.id}')
+    log.info(f'Logged in as {bot.user.name}, user id {bot.user.id}')
     log.info('------')
 
 
@@ -302,7 +293,12 @@ async def on_error(event, *args, **kwargs):
 
 
 if __name__ == '__main__':
-    log.info(f"Loading with py-cord version {discord.__version__}")
+    from collections import defaultdict
+    levels = defaultdict(lambda: logging.INFO, logging._nameToLevel)
+    global audiodir
+
+    log = logging.getLogger('sqcobot')
+
     configfile = os.path.join(get_mod_path(), 'config.json')
     if not os.path.exists(configfile):
         log.warning('Warning, config file not found.')
@@ -317,4 +313,23 @@ if __name__ == '__main__':
         token = config['token']
         if token == 'YOUR_TOKEN_HERE':
             raise ValueError("You must set a token in config.json.")
+
+    log_level = config['log_level'].upper(
+    ) if 'log_level' in config else logging.WARN
+
+    log.setLevel(log_level)
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+
+    audiodir = os.path.join(get_mod_path(), 'sounds')
+    log.info(f'{audiodir=}')
+
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    ch.setFormatter(formatter)
+    log.addHandler(ch)
+    logging.getLogger('discord').addHandler(ch)
+    logging.getLogger('discord').setLevel(log_level)
+
+    log.info(f"Loading with py-cord version {discord.__version__}")
+
     bot.run(token)
