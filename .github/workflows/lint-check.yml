@@ -1,0 +1,41 @@
+name: Pytest and Lint Check
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: "Test reason"
+        required: false
+        default: ""
+  pull_request:
+    branches: [master, prod]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv (official script)
+        run: |
+          curl -Ls https://astral.sh/uv/install.sh | sh
+          echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+      - name: Install dependencies with uv
+        run: |
+          uv pip install --system flake8 pytest
+          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+      - name: Lint with flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Test with pytest (uv)
+        run: |
+          uv pip install --system pytest
+          uv pip install --system .
+          uv run pytest

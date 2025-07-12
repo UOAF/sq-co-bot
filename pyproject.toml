@@ -1,0 +1,37 @@
+[project]
+dependencies = [
+  "boto3>=1.39.4",
+  "fuzzywuzzy>=0.18.0",
+  "pynacl>=1.5.0",
+  "requests>=2.32.4",
+  "python-Levenshtein>=0.21.1",
+  "cffi>=1.17.1",
+  "discord.py @ git+https://github.com/Rapptz/discord.py",
+]
+description = "Squadron Co-Bot"
+name = "co-bot"
+requires-python = ">=3.9"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["deployment", "handlers"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[dependency-groups]
+dev = [
+  "aws-cdk-aws-lambda-python-alpha>=2.204.0a0",
+  "pytest>=8.4.1",
+  "pytest-asyncio>=1.1.0",
+  "aws-cdk-lib>=2.110.0",
+  "constructs>=10.0.0",
+  "pytest>=7.4.0",
+  "black>=23.0.0",
+  "ruff>=0.1.0",
+  "pytest-asyncio>=1.1.0",
+]
