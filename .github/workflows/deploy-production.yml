@@ -1,6 +1,7 @@
 name: Deploy to AWS via CDK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - prod
@@ -8,6 +9,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -15,8 +19,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: "arn:aws:iam::496462056073:role/CoBotStack-GitHubActionsDeployRoleA6F4AD3D-Y7cr5WA9DQVj"
           aws-region: us-west-2
 
       - name: Install Node.js
@@ -29,10 +32,15 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install uv (official script)
+        run: |
+          curl -Ls https://astral.sh/uv/install.sh | sh
+          echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: |
           npm install -g aws-cdk
-          pip install -r requirements.txt
+          uv pip install --system .
 
       - name: CDK Deploy
         run: cdk deploy --require-approval never
