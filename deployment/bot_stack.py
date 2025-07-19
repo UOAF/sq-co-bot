@@ -11,6 +11,7 @@ from aws_cdk import (
     aws_ecs as ecs,
     aws_ec2 as ec2,
     aws_logs as logs,
+    aws_iam as iam,
 )
 from constructs import Construct
 import os
@@ -55,6 +56,39 @@ class CoBotStack(Stack):
         if add_fargate:
             self._add_fargate_service(audio_bucket, bot_token_secret,
                                       pause_ecs)
+
+        # OIDC provider for GitHub Actions
+        oidc_provider = iam.OpenIdConnectProvider(
+            self,
+            "GitHubOIDCProvider",
+            url="https://token.actions.githubusercontent.com",
+            client_ids=["sts.amazonaws.com"])
+
+        github_policies = [
+            "AmazonEC2FullAccess", "AmazonECS_FullAccess",
+            "AmazonS3FullAccess", "SecretsManagerReadWrite",
+            "CloudWatchLogsFullAccess", "AWSCloudFormationFullAccess",
+            "IAMFullAccess"
+        ]
+
+        # IAM role for GitHub Actions
+        github_actions_role = iam.Role(
+            self,
+            "GitHubActionsDeployRole",
+            assumed_by=iam.FederatedPrincipal(
+                oidc_provider.open_id_connect_provider_arn,
+                conditions={
+                    "StringLike": {
+                        # Replace with your GitHub org/repo and branch as needed
+                        "token.actions.githubusercontent.com:sub":
+                        "repo:UOAF/sq-co-bot:ref:refs/heads/prod"
+                    }
+                },
+                assume_role_action="sts:AssumeRoleWithWebIdentity"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(p)
+                for p in github_policies
+            ])
 
     def _add_fargate_service(self, audio_bucket, bot_token_secret, pause_ecs):
         vpc = ec2.Vpc(self,
