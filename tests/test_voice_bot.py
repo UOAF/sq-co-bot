@@ -1,4 +1,3 @@
-import sys
 import os
 
 os.environ.setdefault("AUDIO_BUCKET", "test-bucket")
@@ -63,7 +62,7 @@ async def test_voice_channel_autocomplete():
 @pytest.mark.asyncio
 async def test_join_voice_channel_moves(monkeypatch):
     interaction = MagicMock()
-    interaction.guild.voice_client = MagicMock()
+    interaction.guild.voice_client = MagicMock(spec=discord.VoiceClient)
     channel = MagicMock()
     interaction.guild.voice_client.move_to = AsyncMock()
     await voice_bot.join_voice_channel(interaction, channel)

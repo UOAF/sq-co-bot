@@ -1,15 +1,17 @@
+import argparse
 import asyncio
 import json
+import logging
+import os
+import re
+import tempfile
+
 import discord
 from discord import app_commands
 from discord.ext import commands
-import os
-import argparse
-import logging
-import re
 from fuzzywuzzy import fuzz
+
 from cobot.audio_source import LocalAudioSource, S3AudioSource
-import tempfile
 
 log = logging.getLogger('sqcobot')
 log.setLevel(logging.DEBUG)
@@ -173,7 +175,7 @@ async def list_sounds(interaction: discord.Interaction):
             await dm.send(msg)
         await interaction.followup.send(
             "I've sent you a DM with the sound list.", ephemeral=True)
-    except Exception as e:
+    except Exception:
         log.exception("Failed to DM sound list")
         await interaction.followup.send(
             "Failed to send DM. Do you have DMs disabled?", ephemeral=True)
@@ -187,9 +189,9 @@ async def sound_name_autocomplete(
         current: str) -> list[app_commands.Choice[str]]:
     if not sounds:
         return []
-    scores = get_fuzzy_match_scores(current, sounds)
+    scores: dict[str, int] = get_fuzzy_match_scores(current, sounds)
     # Sort by score, highest first
-    sorted_keys = sorted(scores, key=scores.get, reverse=True)
+    sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
     # Limit to 20 results (Discord's limit)
     return [
         app_commands.Choice(name=sounds[k], value=sounds[k])
@@ -213,18 +215,24 @@ async def play(interaction: discord.Interaction, sound_name: str):
             f"I don't know how to play `{sound_name}`.", ephemeral=True)
         return
 
-    if not interaction.user.voice or not interaction.user.voice.channel:
+    user = interaction.user
+    assert isinstance(user, discord.Member)
+    if user.voice is None or not user.voice.channel:
         await interaction.response.send_message(
             'You must be in a voice channel to play sounds.', ephemeral=True)
         return
 
-    channel = interaction.user.voice.channel
+    channel = user.voice.channel
     await interaction.response.defer(ephemeral=True)
 
+    assert interaction.guild is not None
     if not interaction.guild.voice_client:
         vc = await channel.connect()
     else:
         vc = interaction.guild.voice_client
+
+    assert vc is not None
+    assert isinstance(vc, discord.VoiceClient)
 
     await interaction.followup.send(f'Playing `{sounds[key]}`.',
                                     ephemeral=True)
@@ -255,7 +263,12 @@ async def play(interaction: discord.Interaction, sound_name: str):
 
 async def join_voice_channel(interaction: discord.Interaction,
                              channel: discord.VoiceChannel):
+
+    assert interaction.guild is not None
+    log.debug(f"{interaction.guild.voice_client}, type is {type(interaction.guild.voice_client)}")
+
     if interaction.guild.voice_client is not None:
+        assert isinstance(interaction.guild.voice_client, discord.VoiceClient)
         await interaction.guild.voice_client.move_to(channel)
     else:
         await channel.connect()
@@ -281,51 +294,52 @@ async def voice_channel_autocomplete(
 @app_commands.describe(channel='Voice channel to join')
 @app_commands.autocomplete(channel=voice_channel_autocomplete)
 async def join(interaction: discord.Interaction, channel: str):
+    assert interaction.guild is not None
     vc = discord.utils.get(interaction.guild.voice_channels, id=int(channel))
     if not vc:
         await interaction.response.send_message("Channel not found.",
                                                 ephemeral=True)
         return
+    await interaction.response.defer(ephemeral=True)
     try:
         await join_voice_channel(interaction, vc)
-    except discord.ClientException:
-        # If the bot is already connected, just move it
-        if interaction.guild.voice_client:
-            await interaction.guild.voice_client.move_to(vc)
+        log.info(f"Joined voice channel: {vc.name}")
+        await interaction.followup.send(f"Joined {vc.name}",
+                                        ephemeral=True)
     except Exception as e:
         log.exception("Failed to join voice channel")
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Failed to join {vc.name}. Error: {e}", ephemeral=True)
-        return
-    else:
-        log.info(f"Joined voice channel: {vc.name}")
-        await interaction.response.send_message(f"Joined {vc.name}",
-                                                ephemeral=True)
 
 
 @tree.command(name='summon', description="Join your current voice channel")
 async def summon(interaction: discord.Interaction):
+    assert isinstance(interaction.user, discord.Member)
     if not interaction.user.voice or not interaction.user.voice.channel:
         await interaction.response.send_message(
             "You are not connected to a voice channel", ephemeral=True)
         return
 
     channel = interaction.user.voice.channel
-    await join_voice_channel(interaction, channel)
-    await interaction.response.defer(ephemeral=True)  # Defer right away
+    await interaction.response.defer(ephemeral=True)
+
+    assert isinstance(channel, discord.VoiceChannel)
     try:
         await join_voice_channel(interaction, channel)
-        await interaction.followup.send(f"Joined {channel.name}",
-                                        ephemeral=True)
+        await interaction.followup.send(f"Joined {channel.name}", ephemeral=True)
     except Exception as e:
+        log.exception("Failed to join voice channel")
         await interaction.followup.send(
-            f"Tried to summon the bot to {channel}, but it could not be found. Error: {e}",
-            ephemeral=True)
+            f"Tried to summon the bot to {channel}, but it could not be found. Error: {str(e)}",
+            ephemeral=True,
+        )
 
 
 @tree.command(name='leave', description="Leave any connected voice channel.")
 async def leave(interaction: discord.Interaction):
+    assert interaction.guild is not None
     vc = interaction.guild.voice_client
+    assert isinstance(vc, discord.VoiceClient)
     if vc:
         channel = vc.channel
         await vc.disconnect()
@@ -338,14 +352,26 @@ async def leave(interaction: discord.Interaction):
 
 @tree.command(name='stop', description="Stop any currently playing sound.")
 async def stop(interaction: discord.Interaction):
+    assert interaction.guild is not None
     vc = interaction.guild.voice_client
-    if vc and vc.is_playing():
+    assert isinstance(vc, discord.VoiceClient)
+    if vc is not None and vc.is_playing():
         vc.stop()
         await interaction.response.send_message("Stopped playing sound.",
                                                 ephemeral=True)
     else:
         await interaction.response.send_message(
             "No sound is currently playing.", ephemeral=True)
+
+
+@bot.event
+async def on_disconnect():
+    log.warning("Gateway connection lost.")
+
+
+@bot.event
+async def on_resumed():
+    log.info("Gateway connection resumed.")
 
 
 @bot.event
@@ -356,6 +382,7 @@ async def on_ready():
     log.info(
         f'Found {len(sounds)} sounds in {"local dir" if args.mock_audio else "S3"}.'
     )
+    assert bot.user is not None
     log.info('Logged in as')
     log.info(f'{bot.user.name=}')
     log.info(f'{bot.user.id}')

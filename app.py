@@ -1,12 +1,6 @@
 import aws_cdk as cdk
 from deployment.bot_stack import CoBotStack
 
-import os
-import subprocess
-import shutil
-from pathlib import Path
-
-
 def deploy():
     app = cdk.App()
     skip_ecs = app.node.try_get_context("skip_ecs")
