@@ -14,6 +14,6 @@ COPY cobot /app/cobot
 
 RUN curl -Ls https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
-RUN uv pip install --system .
+RUN uv sync
 
 CMD ["uv", "run", "python", "-m", "cobot.voice_bot"]
