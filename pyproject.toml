@@ -11,7 +11,7 @@ dependencies = [
 ]
 description = "Squadron Co-Bot"
 name = "co-bot"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 version = "0.1.0"
 
 [build-system]
